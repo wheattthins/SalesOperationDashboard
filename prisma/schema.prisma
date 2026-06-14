@@ -1,0 +1,131 @@
+// PostgreSQL via Neon for hosted deployments. For local-only SQLite dev,
+// change provider back to "sqlite" and DATABASE_URL to "file:./dev.db".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  ADMIN
+  SALES_MANAGER
+  SALES_REP
+  FINANCE
+}
+
+enum LeadStatus {
+  NEW_LEAD
+  CONTACTED
+  SHOWING_SCHEDULED
+  OFFER_MADE
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  ZILLOW
+  WALK_IN
+  SOCIAL_MEDIA
+  COLD_CALL
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  role           Role
+  // Commission rate as a fraction (e.g. 0.03 = 3%). Only meaningful for reps.
+  commissionRate Float    @default(0.03)
+  avatarColor    String   @default("#6366f1")
+  createdAt      DateTime @default(now())
+
+  assignedLeads      Lead[]       @relation("AssignedRep")
+  sales              Sale[]       @relation("SaleRep")
+  commissions        Commission[] @relation("CommissionRep")
+  approvedCommissions Commission[] @relation("CommissionApprover")
+}
+
+model Lead {
+  id         String     @id @default(cuid())
+  name       String
+  email      String
+  phone      String
+  source     LeadSource
+  status     LeadStatus @default(NEW_LEAD)
+  budget     Float
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  assignedRep   User   @relation("AssignedRep", fields: [assignedRepId], references: [id])
+  assignedRepId String
+
+  sale Sale?
+
+  @@index([status])
+  @@index([assignedRepId])
+}
+
+model Sale {
+  id        String   @id @default(cuid())
+  salePrice Float
+  closedAt  DateTime @default(now())
+
+  lead   Lead   @relation(fields: [leadId], references: [id])
+  leadId String @unique
+
+  rep   User   @relation("SaleRep", fields: [repId], references: [id])
+  repId String
+
+  commission Commission?
+
+  @@index([repId])
+}
+
+model Commission {
+  id        String           @id @default(cuid())
+  rate      Float
+  amount    Float
+  status    CommissionStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  paidAt    DateTime?
+
+  sale   Sale   @relation(fields: [saleId], references: [id])
+  saleId String @unique
+
+  rep   User   @relation("CommissionRep", fields: [repId], references: [id])
+  repId String
+
+  approvedBy   User?   @relation("CommissionApprover", fields: [approvedById], references: [id])
+  approvedById String?
+
+  @@index([repId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String // LEAD_CREATED, LEAD_UPDATED, SALE_CLOSED, COMMISSION_APPROVED, COMMISSION_PAID
+  entityType String // Lead, Sale, Commission
+  entityId   String
+  summary    String
+  actorName  String
+  actorRole  Role
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
