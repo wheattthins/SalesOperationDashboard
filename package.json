@@ -12,6 +12,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "db:etl": "tsx --env-file=.env scripts/etl/run-etl.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "postinstall": "prisma generate"

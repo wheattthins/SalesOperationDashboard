@@ -1,0 +1,119 @@
+// DAX measure reference for the Sales Operations Power BI model.
+//
+// Paste each measure into Power BI Desktop (Modeling > New Measure) on the
+// table noted in the comment above it. Assumes the model relationships:
+//   FactSales[rep_sk]      -> DimRep[rep_sk]
+//   FactSales[closed_date_key] -> DimDate[date_key]
+//   FactLeads[rep_sk]      -> DimRep[rep_sk]
+//   FactLeads[created_date_key] -> DimDate[date_key]
+//   FactCommission[rep_sk] -> DimRep[rep_sk]
+//   FactCommission[created_date_key] -> DimDate[date_key]
+// DimDate must be marked as the model's date table (Mark as Date Table ->
+// DimDate[full_date]) for the time-intelligence functions below to work.
+
+// ============================================================
+// Base measures — FactSales
+// ============================================================
+
+Total Revenue =
+SUM ( FactSales[sale_price] )
+
+Deals Closed =
+COUNTROWS ( FactSales )
+
+Avg Deal Size =
+DIVIDE ( [Total Revenue], [Deals Closed] )
+
+Avg Days to Close =
+AVERAGE ( FactSales[days_to_close] )
+
+// ============================================================
+// Time intelligence — FactSales
+// ============================================================
+
+Revenue PY =
+CALCULATE ( [Total Revenue], SAMEPERIODLASTYEAR ( DimDate[full_date] ) )
+
+Revenue YoY % =
+VAR CurrentRevenue = [Total Revenue]
+VAR PriorRevenue = [Revenue PY]
+RETURN
+    DIVIDE ( CurrentRevenue - PriorRevenue, PriorRevenue )
+
+Revenue MoM % =
+VAR CurrentRevenue = [Total Revenue]
+VAR PriorMonthRevenue =
+    CALCULATE ( [Total Revenue], DATEADD ( DimDate[full_date], -1, MONTH ) )
+RETURN
+    DIVIDE ( CurrentRevenue - PriorMonthRevenue, PriorMonthRevenue )
+
+Revenue YTD =
+TOTALYTD ( [Total Revenue], DimDate[full_date] )
+
+Revenue Rolling 12M =
+CALCULATE (
+    [Total Revenue],
+    DATESINPERIOD ( DimDate[full_date], MAX ( DimDate[full_date] ), -12, MONTH )
+)
+
+// ============================================================
+// Rep leaderboard — FactSales x DimRep
+// ============================================================
+
+Rep Revenue Rank =
+RANKX (
+    ALLSELECTED ( DimRep[name] ),
+    CALCULATE ( [Total Revenue] ),
+    ,
+    DESC,
+    DENSE
+)
+
+Rep Revenue Share % =
+DIVIDE ( [Total Revenue], CALCULATE ( [Total Revenue], ALLSELECTED ( DimRep ) ) )
+
+Top 5 Rep Flag =
+IF ( [Rep Revenue Rank] <= 5, 1, 0 )
+
+// ============================================================
+// Pipeline / conversion — FactLeads
+// ============================================================
+
+Total Leads =
+COUNTROWS ( FactLeads )
+
+Closed Won Leads =
+CALCULATE ( [Total Leads], DimLeadStatus[status_code] = "CLOSED_WON" )
+
+Lead to Close Conversion % =
+DIVIDE ( [Closed Won Leads], [Total Leads] )
+
+// ============================================================
+// Commission — FactCommission
+// ============================================================
+
+Total Commission Accrued =
+SUM ( FactCommission[amount] )
+
+Commission Paid =
+CALCULATE ( [Total Commission Accrued], FactCommission[status] = "PAID" )
+
+Commission Outstanding =
+CALCULATE (
+    [Total Commission Accrued],
+    FactCommission[status] IN { "PENDING", "APPROVED" }
+)
+
+Commission Paid % =
+DIVIDE ( [Commission Paid], [Total Commission Accrued] )
+
+Effective Commission Rate =
+DIVIDE ( [Total Commission Accrued], [Total Revenue] )
+
+// ============================================================
+// Row-level security (Modeling > Manage Roles)
+// ============================================================
+// Role "Sales Rep" — table filter on DimRep:
+//   DimRep[email] = USERPRINCIPALNAME() && DimRep[is_current] = TRUE
+// Role "Finance" / "Admin" / "Sales Manager" — no row filter (full access),
+// mirroring the app's permissions.ts matrix.

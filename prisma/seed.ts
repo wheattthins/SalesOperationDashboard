@@ -25,6 +25,26 @@ function daysAgo(days: number): Date {
   return d;
 }
 
+// Lead volume is weighted toward recent months so the book of business shows
+// a growth trend (useful for YoY/MoM reporting) instead of flat random noise.
+const MONTHS_BACK = 24;
+const monthWeights = Array.from({ length: MONTHS_BACK }, (_, monthsAgo) => MONTHS_BACK - monthsAgo + 2);
+const totalMonthWeight = monthWeights.reduce((s, w) => s + w, 0);
+
+function pickMonthsAgo(): number {
+  let r = rand() * totalMonthWeight;
+  for (let m = 0; m < MONTHS_BACK; m++) {
+    if (r < monthWeights[m]) return m;
+    r -= monthWeights[m];
+  }
+  return 0;
+}
+
+function pickCreatedDaysAgo(): number {
+  const monthsAgo = pickMonthsAgo();
+  return Math.max(2, monthsAgo * 30 + randInt(0, 29));
+}
+
 const FIRST_NAMES = [
   "Olivia", "Liam", "Emma", "Noah", "Ava", "Ethan", "Sophia", "Mason", "Isabella", "Lucas",
   "Mia", "Logan", "Charlotte", "Jackson", "Amelia", "Aiden", "Harper", "Elijah", "Evelyn", "James",
@@ -74,6 +94,8 @@ async function main() {
     { name: "Sam Rivera", email: "sam@homesales.dev", role: "SALES_REP", commissionRate: 0.035, avatarColor: "#8b5cf6" },
     { name: "Taylor Quinn", email: "taylor@homesales.dev", role: "SALES_REP", commissionRate: 0.028, avatarColor: "#ec4899" },
     { name: "Morgan Hayes", email: "morgan@homesales.dev", role: "SALES_REP", commissionRate: 0.032, avatarColor: "#14b8a6" },
+    { name: "Casey Nguyen", email: "casey@homesales.dev", role: "SALES_REP", commissionRate: 0.027, avatarColor: "#3b82f6" },
+    { name: "Riley Foster", email: "riley@homesales.dev", role: "SALES_REP", commissionRate: 0.03, avatarColor: "#f97316" },
   ];
 
   const users = [];
@@ -84,7 +106,7 @@ async function main() {
   const finance = users.find((u) => u.role === "FINANCE")!;
 
   console.log("Seeding leads, sales, commissions...");
-  const LEAD_COUNT = 64;
+  const LEAD_COUNT = 520; // ~2 years of history, weighted toward recent months
   const commissionStatusForClosed = (): CommissionStatus => {
     const r = rand();
     if (r < 0.35) return "PAID";
@@ -99,7 +121,7 @@ async function main() {
     const name = `${first} ${last}`;
     const rep = pick(reps);
     const status = weightedStatus();
-    const createdDaysAgo = randInt(2, 210);
+    const createdDaysAgo = pickCreatedDaysAgo();
     const budget = randInt(180, 950) * 1000;
 
     const lead = await prisma.lead.create({
@@ -155,7 +177,7 @@ async function main() {
   const leads = await prisma.lead.findMany({ include: { assignedRep: true, sale: { include: { commission: true } } } });
   const auditEntries: { action: string; entityType: string; entityId: string; summary: string; actorName: string; actorRole: Role; createdAt: Date }[] = [];
 
-  for (const lead of leads.slice(0, 30)) {
+  for (const lead of leads.slice(0, 240)) {
     auditEntries.push({
       action: "LEAD_CREATED",
       entityType: "Lead",
